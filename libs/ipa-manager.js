@@ -5,6 +5,7 @@ const fs = require('fs-extra')
 const path = require('path')
 const moment = require('moment')
 const pngdefry = require('pngdefry')
+const ApkParser = require('app-info-parser/src/apk')
 
 const uploadDir = config.uploadDir
 
@@ -29,7 +30,7 @@ const iconPath = (publicURL, row) => {
 }
 
 const itemInfo = (row, publicURL) => Object.assign({}, row, {
-  ipa: `${config.publicURL || publicURL}/${row.identifier}/${row.id}/ipa.ipa`,
+  ipa: `${config.publicURL || publicURL}/${row.identifier}/${row.id}/apk.apk`,
   icon: `${config.publicURL || publicURL}/${iconPath(publicURL, row)}`,
   plist: `${config.publicURL || publicURL}/plist/${row.id}.plist`,
   webIcon: `/${iconPath(publicURL, row)}`, // to display on web
@@ -47,7 +48,7 @@ const list = (publicURL) => {
       backList.push(app)
     }
     app.history = app.history || []
-    app.history.push(Object.assign({}, row, {history: undefined, current: row.id===app.id}))
+    app.history.push(Object.assign({}, row, {history: undefined, current: row.id === app.id}))
   })
 
   return backList
@@ -81,8 +82,8 @@ const add = async (file) => {
         plistFile = file
         return true
       } else if (
-        file.path.match(newIconRegular) ||
-        file.path.match(oldIconRegular)
+          file.path.match(newIconRegular) ||
+          file.path.match(oldIconRegular)
       ) {
         iconFiles.push(file)
         return true
@@ -120,13 +121,24 @@ const add = async (file) => {
   })
 
   // parse plist
-  const info = plist.readFileSync(path.join(tmpDir, plistFile.path))
+  let info = {}
+  const parser = new ApkParser(file)
+  await parser.parse().then(result => {
+    info.name = result.application.label[0]
+    info.version = result.versionName
+    info.package = result.package
+    info.identifier = Date.parse(new Date()) + ''
+  }).catch(err => {
+    console.log('err ----> ', err)
+  })
+
   const app = {
-    id: path.basename(file, '.ipa'),
-    name: info['CFBundleDisplayName'] || info['CFBundleName'] || info['CFBundleExecutable'],
-    version: info['CFBundleShortVersionString'],
-    identifier: info['CFBundleIdentifier'],
-    build: info['CFBundleVersion'],
+    package: info.package,
+    id: path.basename(file, '.apk'),
+    name: info.name,
+    version: info.version,
+    identifier: info.identifier,   // 必须不同才能上传
+    build: 'NEM',
     date: new Date(),
     size: (await fs.lstat(file)).size,
     noneIcon: !iconFile,
@@ -136,8 +148,9 @@ const add = async (file) => {
 
   // save files to target dir
   // TODO: upload dir configable
+  console.log(app.identifier)
   const targetDir = path.join(uploadDir, app.identifier, app.id)
-  await fs.move(file, path.join(targetDir, 'ipa.ipa'))
+  await fs.move(file, path.join(targetDir, 'apk.apk'))
   if (iconFile) {
     try {
       await fixPNG(path.join(tmpDir, iconFile.path), path.join(targetDir, 'icon.png'))
@@ -152,7 +165,9 @@ const add = async (file) => {
 
 const find = (id, publicURL) => {
   const row = itemInfo(appList.find(row => row.id === id), publicURL)
-  if (!row) { return {} }
+  if (!row) {
+    return {}
+  }
 
   row.history = appList.filter(r => r.identifier === row.identifier).map(r => Object.assign({}, itemInfo(r, publicURL), {
     current: r.id === row.id,

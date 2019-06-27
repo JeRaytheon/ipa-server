@@ -37,7 +37,7 @@ app.use(router.get('/api/info/:id', async (ctx, id) => {
 
 // import ipa
 app.use(router.post('/api/upload', upload({
-  defExt: 'ipa',
+  defExt: 'apk',
 }, async (ctx, files) => {
   if (!canAccess(ctx)) {
     return
@@ -69,12 +69,6 @@ app.listen(config.port, config.host, () => {
   console.log(`Server started: http://${config.host}:${config.port}`)
 })
 
-const ACCESS_KEY = process.env.ACCESS_KEY
 function canAccess(ctx) {
-  if (ACCESS_KEY && ctx.request.query.key != ACCESS_KEY) {
-    console.log('Access Fail!')
-    ctx.body = { err: 'Access Fail!' }
-    return false
-  }
   return true
 }
